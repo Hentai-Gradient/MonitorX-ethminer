@@ -37,13 +37,16 @@ public class ReportSchedule {
     @Autowired
     EthMinerService ethMinerService;
 
-    Pattern GPUTemperaturePattern = Pattern.compile("GPU Temperature:(.*)C");
-    Pattern GPULoadPattern = Pattern.compile("GPU Load:(.*) %");
-    Pattern GPUPowerPattern = Pattern.compile("(.*?) W \\(average GPU\\)");
+    Pattern GPUPattern = Pattern.compile("GPU0(.*)%");
 
     private Date lastUploadDate;
 
     private Map<String, String> xhInfo;
+
+    private List<Map<String, String>> gpuInfo = new ArrayList<>();
+
+    @Value("${api.url}")
+    String apiUrl;
 
     @Value("${code}")
     private String code;
@@ -51,13 +54,10 @@ public class ReportSchedule {
     @Value("${url}")
     private String url;
 
-    @Value("${gpuFolder}")
-    private String gpuFolder;
-
     @Value("${wallet}")
     private String wallet;
 
-    @Scheduled(fixedDelay = 3000)
+    @Scheduled(fixedDelay = 6000)
     public void report() {
         upload();
     }
@@ -123,23 +123,18 @@ public class ReportSchedule {
             }
 
             Metric gpuMetric = new Metric();
-            List<Map<String, String>> gpuInfo = getGPUInfo();
             gpuMetric.setTitle("GPU信息");
             gpuMetric.setType("text");
             StringBuilder sb = new StringBuilder();
             sb.append("<table class='table table-bordered table-condensed'>");
             sb.append("     <tr>");
-            sb.append("         <th width='60'>序号</th>");
+            sb.append("         <th width='150'>序号</th>");
             sb.append("         <th>温度</th>");
-            sb.append("         <th>负载</th>");
-            sb.append("         <th>平均功率</th>");
             sb.append("     </tr>");
             for (Map<String, String> gpu : gpuInfo) {
                 sb.append("     <tr>");
                 sb.append("         <td>").append(gpu.get("index")).append("</td>");
                 sb.append("         <td>").append(gpu.get("temperature")).append("℃</td>");
-                sb.append("         <td>").append(gpu.get("load")).append("％</td>");
-                sb.append("         <td>").append(gpu.get("power")).append("W</td>");
                 sb.append("     </tr>");
             }
             sb.append("</table>");
@@ -178,38 +173,29 @@ public class ReportSchedule {
         }
     }
 
-    private List<Map<String, String>> getGPUInfo() {
-        List<Map<String, String>> info = new ArrayList<>();
-        if (StringUtils.isNotEmpty(gpuFolder)) {
-            for (int i = 1; i < 7; i++) {
-                Path path = Paths.get(gpuFolder, i + "", "amdgpu_pm_info");
-                try {
-                    String content = new String(Files.readAllBytes(path));
-                    Matcher temperatureMatcher = GPUTemperaturePattern.matcher(content);
-                    Matcher loadMatcher = GPULoadPattern.matcher(content);
-                    Matcher powerMatcher = GPUPowerPattern.matcher(content);
-                    if (temperatureMatcher.find() && loadMatcher.find() && powerMatcher.find()) {
-                        Map<String, String> infoMap = new HashMap<>();
-                        String temperature = temperatureMatcher.group(1).trim();
-                        String load = loadMatcher.group(1).trim();
-                        String power = powerMatcher.group(1).trim();
+    @Scheduled(fixedDelay = 10000)
+    private void getGPUInfo() {
+        try {
+            List<Map<String, String>> info = new ArrayList<>();
+            String res = HTTPUtil.sendGet(apiUrl);
 
-                        infoMap.put("index", i + "");
-                        infoMap.put("temperature", temperature);
-                        infoMap.put("load", load);
-                        infoMap.put("power", power);
+            String[] resList = res.split("<br>");
+            for (String line : resList) {
+                Matcher gpuInfoMatcher = GPUPattern.matcher(line);
+                if (gpuInfoMatcher.find()) {
+                    String gpuInfoStr = gpuInfoMatcher.group(0);
+                    for (String index : gpuInfoStr.split(", ")) {
+                        Map<String, String> infoMap = new HashMap<>();
+                        infoMap.put("index", index.substring(0, 4));
+                        infoMap.put("temperature", index.substring(7, 9));
                         info.add(infoMap);
-                    } else {
-                        logger.info("didn't find");
                     }
-                } catch (NoSuchFileException e) {
                     break;
-                } catch (IOException e) {
-                    logger.error("read gpu info failed, path={}", path.toString(), e);
                 }
             }
+            gpuInfo = info;
+        } catch (IOException e) {
+            e.printStackTrace();
         }
-
-        return info;
     }
 }

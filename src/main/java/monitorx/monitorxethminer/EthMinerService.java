@@ -18,19 +18,18 @@ import java.util.regex.Pattern;
  */
 @Service
 public class EthMinerService {
-
-    Logger logger = LoggerFactory.getLogger(getClass());
-
-    @Value("${log}")
-    String logFile;
+    private Logger logger = LoggerFactory.getLogger(getClass());
 
     @Value("${wallet}")
     String walletAddress;
 
+    @Value("${api.url}")
+    String apiUrl;
+
     private Date lastTailDate;
     private Integer lastTailMh;
 
-    Pattern pattern = Pattern.compile(".*?Speed (.*?) M.*");
+    private Pattern pattern = Pattern.compile("Total Speed.* Mh\\/s");
 
     public Date getLastTailDate() {
         return lastTailDate;
@@ -48,8 +47,8 @@ public class EthMinerService {
         this.lastTailMh = lastTailMh;
     }
 
-    public void run() throws IOException {
-        LogTail tailer = new LogTail(1000, new File(logFile), false);
+    public void run() {
+        LogTail tailer = new LogTail(1000, apiUrl);
         tailer.add(msg -> {
             Integer mh = parseMh(msg);
             if (mh != null) {
@@ -62,10 +61,9 @@ public class EthMinerService {
 
     private Integer parseMh(String line) {
         //remove ascii color
-        line = line.replaceAll("\u001B\\[[;\\d]*m", "");
         Matcher matcher = pattern.matcher(line);
         if (matcher.find()) {
-            String val = matcher.group(1).trim();
+            String val = matcher.group(0).replaceAll("Total Speed: ", "").replaceAll(" Mh/s", "");
             return new BigDecimal(val).intValue();
         }
 

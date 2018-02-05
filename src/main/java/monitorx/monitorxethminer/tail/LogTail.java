@@ -1,8 +1,10 @@
 package monitorx.monitorxethminer.tail;
 
-import java.io.File;
+import monitorx.monitorxethminer.HTTPUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -10,10 +12,12 @@ import java.util.Set;
  * @author qianlifeng
  */
 public class LogTail implements Runnable {
+    private Logger logger = LoggerFactory.getLogger(getClass());
+
     /**
      * 存储TailLog侦听器
      */
-    private final Set<TailNotify> listeners = new HashSet<TailNotify>();
+    private final Set<TailNotify> listeners = new HashSet<>();
 
     /**
      * 当读到文件结尾后暂停的时间间隔
@@ -21,25 +25,19 @@ public class LogTail implements Runnable {
     private long sampleInterval = 10;
 
     /**
-     * 设置日志文件
+     * 设置API地址
      */
-    private File logfile;
-
-    /**
-     * 设置是否从头开始读
-     */
-    private boolean startAtBeginning = false;
+    private String apiUrl;
 
     /**
      * 设置tail运行标记
      */
     private boolean tailing = false;
 
-    public LogTail(long sampleInterval, File logfile, boolean startAtBeginning) {
+    public LogTail(long sampleInterval, String apiUrl) {
         super();
         this.sampleInterval = sampleInterval;
-        this.logfile = logfile;
-        this.startAtBeginning = startAtBeginning;
+        this.apiUrl = apiUrl;
     }
 
     /**
@@ -64,41 +62,20 @@ public class LogTail implements Runnable {
 
     @Override
     public void run() {
-        long filePointer = 0;
         this.tailing = true;
-        if (this.startAtBeginning) { //判断是否从头开始读文件
-            filePointer = 0;
-        } else {
-            filePointer = this.logfile.length(); //指针标识从文件的当前长度开始。
-        }
         try {
-            RandomAccessFile file = new RandomAccessFile(logfile, "r"); //创建随机读写文件
             while (this.tailing) {
-                long fileLength = this.logfile.length();
-                if (fileLength < filePointer) {
-                    file = new RandomAccessFile(logfile, "r");
-                    filePointer = 0;
-                }
-                if (fileLength > filePointer) {
-                    file.seek(filePointer);
-                    String line = file.readLine();
-                    while (line != null) {
-                        this.notify(line);
-                        line = file.readLine();
-                    }
-                    filePointer = file.getFilePointer();
+                String res = HTTPUtil.sendGet(apiUrl);
+                String[] resList = res.split("<br>");
+                for (String line : resList) {
+                    this.notify(line);
                 }
                 Thread.sleep(this.sampleInterval);
             }
-            file.close();
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             e.printStackTrace();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-
         }
     }
-
 
     /**
      * 停止tail

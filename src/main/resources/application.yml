@@ -1,5 +1,4 @@
-log: ./nohup.out
-wallet: 68950Ea934f9D4E3FF889e06369ec29b52c0123A
-code: ethminer
-url: http://localhost:8080/api/status/upload/
-gpuFolder: /app/dri
+api.url: your claymore core miner address (example: http://localhost:3333)
+wallet: your wallet address
+code: your miner code in XH pool
+url: your monitorX url
