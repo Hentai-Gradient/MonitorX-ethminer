@@ -15,6 +15,5 @@ public class Application {
         ConfigurableApplicationContext applicationContext = SpringApplication.run(Application.class, args);
         EthMinerService ethMinerService = applicationContext.getBean(EthMinerService.class);
         ethMinerService.run();
-
     }
 }

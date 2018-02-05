@@ -70,7 +70,7 @@ public class ReportSchedule {
     /**
      * 获得星火矿池信息
      */
-    @Scheduled(fixedDelay = 60000)
+    @Scheduled(fixedDelay = 600000)
     private void getXHInfo() {
         if (StringUtils.isNotEmpty(wallet)) {
             String walletStr = wallet.replaceAll("0x", "");
@@ -136,10 +136,10 @@ public class ReportSchedule {
             sb.append("     </tr>");
             for (Map<String, String> gpu : gpuInfo) {
                 sb.append("     <tr>");
-                sb.append("         <td>" + gpu.get("index") + "</td>");
-                sb.append("         <td>" + gpu.get("temperature") + "℃</td>");
-                sb.append("         <td>" + gpu.get("load") + "％</td>");
-                sb.append("         <td>" + gpu.get("power") + "W</td>");
+                sb.append("         <td>").append(gpu.get("index")).append("</td>");
+                sb.append("         <td>").append(gpu.get("temperature")).append("℃</td>");
+                sb.append("         <td>").append(gpu.get("load")).append("％</td>");
+                sb.append("         <td>").append(gpu.get("power")).append("W</td>");
                 sb.append("     </tr>");
             }
             sb.append("</table>");
@@ -153,6 +153,14 @@ public class ReportSchedule {
                 xhMetric.setType("text");
                 xhMetric.setValue("<div style='font-weight: 700;font-size: 90px;font-family: 黑体!important;height: 230px;display: flex;align-items: center;justify-content: center;'>" + xhInfo.get("balance") + "</div>");
                 metrics.add(xhMetric);
+
+                if (xhInfo.containsKey("meanHashrate24H") && lastTailDate != null && lastTailMh != null) {
+                    Metric meanHashRateMetric = new Metric();
+                    meanHashRateMetric.setTitle("星火24小时平均算力差距");
+                    meanHashRateMetric.setType("number");
+                    meanHashRateMetric.setValue(String.valueOf(Integer.valueOf(xhInfo.get("meanHashrate24H")) - lastTailMh));
+                    metrics.add(meanHashRateMetric);
+                }
 
                 if (xhInfo.containsKey("meanHashrate24H")) {
                     Metric meanHashRateMetric = new Metric();

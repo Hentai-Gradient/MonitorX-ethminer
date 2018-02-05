@@ -67,8 +67,6 @@ public class EthMinerService {
         if (matcher.find()) {
             String val = matcher.group(1).trim();
             return new BigDecimal(val).intValue();
-        } else {
-            logger.info("didn't find");
         }
 
         return null;
