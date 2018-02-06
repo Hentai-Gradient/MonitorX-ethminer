@@ -48,7 +48,6 @@ public class EthMinerService {
             if (mh != null) {
                 lastTailDate = new Date();
                 lastTailMh = mh;
-                logger.info(String.valueOf(mh));
             }
         });
         new Thread(tailer).start();

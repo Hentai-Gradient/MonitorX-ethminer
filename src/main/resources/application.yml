@@ -1,4 +1,13 @@
-api.url: "your claymore core miner address (example: http://localhost:3333)"
-wallet: "your wallet address"
-code: "your miner code in XH pool"
-url: "your monitorX url"
+#api.url: "your claymore core miner address (example: http://localhost:3333)"
+#wallet: "your wallet address"
+#code: "your miner code in XH pool"
+#url: "your monitorX url"
+
+# claymore api url
+api.url: "http://192.168.1.2:3333"
+# empty for now
+wallet: c1ab03d87d67dc7ec355ec3dc9d6a07f9a1efa47
+# monitorx node code
+code: rigtest
+#monitorx url
+url:  http://ethmon.yangjia.xin/api/status/upload/
