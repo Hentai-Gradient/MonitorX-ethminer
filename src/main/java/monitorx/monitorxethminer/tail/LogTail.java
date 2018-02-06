@@ -1,11 +1,13 @@
 package monitorx.monitorxethminer.tail;
 
-import monitorx.monitorxethminer.HTTPUtil;
+import com.alibaba.fastjson.JSON;
+import monitorx.monitorxethminer.jsonrpc.JsonRPCImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -65,11 +67,9 @@ public class LogTail implements Runnable {
         this.tailing = true;
         try {
             while (this.tailing) {
-                String res = HTTPUtil.sendGet(apiUrl);
-                String[] resList = res.split("<br>");
-                for (String line : resList) {
-                    this.notify(line);
-                }
+                String res = JsonRPCImpl.doRequest(apiUrl, 17, "2,0", "miner_getstat1");
+                List<String> resList = JSON.parseArray(JSON.parseObject(res).getString("result"), String.class);
+                this.notify(resList.get(2).split(";")[0]);
                 Thread.sleep(this.sampleInterval);
             }
         } catch (IOException | InterruptedException e) {

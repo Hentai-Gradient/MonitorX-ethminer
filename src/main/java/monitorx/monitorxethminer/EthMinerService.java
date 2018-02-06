@@ -1,17 +1,13 @@
 package monitorx.monitorxethminer;
 
 import monitorx.monitorxethminer.tail.LogTail;
+import org.apache.commons.lang3.math.NumberUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
-import java.io.IOException;
-import java.math.BigDecimal;
 import java.util.Date;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * @author qianlifeng
@@ -28,8 +24,6 @@ public class EthMinerService {
 
     private Date lastTailDate;
     private Integer lastTailMh;
-
-    private Pattern pattern = Pattern.compile("Total Speed.* Mh\\/s");
 
     public Date getLastTailDate() {
         return lastTailDate;
@@ -54,17 +48,15 @@ public class EthMinerService {
             if (mh != null) {
                 lastTailDate = new Date();
                 lastTailMh = mh;
+                logger.info(String.valueOf(mh));
             }
         });
         new Thread(tailer).start();
     }
 
     private Integer parseMh(String line) {
-        //remove ascii color
-        Matcher matcher = pattern.matcher(line);
-        if (matcher.find()) {
-            String val = matcher.group(0).replaceAll("Total Speed: ", "").replaceAll(" Mh/s", "");
-            return new BigDecimal(val).intValue();
+        if (NumberUtils.isNumber(line)) {
+            return Integer.valueOf(line) / 1000;
         }
 
         return null;

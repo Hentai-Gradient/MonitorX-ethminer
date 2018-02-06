@@ -3,6 +3,7 @@ package monitorx.monitorxethminer;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import monitorx.monitorxethminer.jsonrpc.JsonRPCImpl;
 import monitorx.monitorxethminer.statusReport.Metric;
 import monitorx.monitorxethminer.statusReport.NodeStatus;
 import monitorx.monitorxethminer.statusReport.NodeStatusUpload;
@@ -18,13 +19,7 @@ import javax.annotation.PostConstruct;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * @author qianlifeng
@@ -36,8 +31,6 @@ public class ReportSchedule {
 
     @Autowired
     EthMinerService ethMinerService;
-
-    Pattern GPUPattern = Pattern.compile("GPU0(.*)%");
 
     private Date lastUploadDate;
 
@@ -129,12 +122,14 @@ public class ReportSchedule {
             sb.append("<table class='table table-bordered table-condensed'>");
             sb.append("     <tr>");
             sb.append("         <th width='150'>序号</th>");
-            sb.append("         <th>温度</th>");
+            sb.append("         <th>温度℃</th>");
+            sb.append("         <th>算力Mh/s</th>");
             sb.append("     </tr>");
             for (Map<String, String> gpu : gpuInfo) {
                 sb.append("     <tr>");
                 sb.append("         <td>").append(gpu.get("index")).append("</td>");
-                sb.append("         <td>").append(gpu.get("temperature")).append("℃</td>");
+                sb.append("         <td>").append(gpu.get("temperature")).append("</td>");
+                sb.append("         <td>").append(gpu.get("hashRate")).append("</td>");
                 sb.append("     </tr>");
             }
             sb.append("</table>");
@@ -177,21 +172,16 @@ public class ReportSchedule {
     private void getGPUInfo() {
         try {
             List<Map<String, String>> info = new ArrayList<>();
-            String res = HTTPUtil.sendGet(apiUrl);
-
-            String[] resList = res.split("<br>");
-            for (String line : resList) {
-                Matcher gpuInfoMatcher = GPUPattern.matcher(line);
-                if (gpuInfoMatcher.find()) {
-                    String gpuInfoStr = gpuInfoMatcher.group(0);
-                    for (String index : gpuInfoStr.split(", ")) {
-                        Map<String, String> infoMap = new HashMap<>();
-                        infoMap.put("index", index.substring(0, 4));
-                        infoMap.put("temperature", index.substring(7, 9));
-                        info.add(infoMap);
-                    }
-                    break;
-                }
+            String res = JsonRPCImpl.doRequest(apiUrl, 17, "2,0", "miner_getstat1");
+            List<String> resList = JSON.parseArray(JSON.parseObject(res).getString("result"), String.class);
+            String[] tempList = resList.get(6).split("; ");
+            String[] hashRateList = resList.get(3).split(";");
+            for (Integer i = 0; i < tempList.length; i++) {
+                Map<String, String> infoMap = new HashMap<>();
+                infoMap.put("index", "GPU" + i);
+                infoMap.put("temperature", tempList[i].split(";")[0]);
+                infoMap.put("hashRate", String.valueOf(Integer.valueOf(hashRateList[i]) / 1000));
+                info.add(infoMap);
             }
             gpuInfo = info;
         } catch (IOException e) {
