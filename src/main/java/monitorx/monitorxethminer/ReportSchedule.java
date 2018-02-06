@@ -135,7 +135,7 @@ public class ReportSchedule {
             StringBuilder sb = new StringBuilder();
             sb.append("<table class='table table-bordered table-condensed'>");
             sb.append("     <tr>");
-            sb.append("         <th width='150'>序号</th>");
+            sb.append("         <th width='80'>序号</th>");
             sb.append("         <th>温度℃</th>");
             sb.append("         <th>算力Mh/s</th>");
             sb.append("         <th>负载%</th>");
