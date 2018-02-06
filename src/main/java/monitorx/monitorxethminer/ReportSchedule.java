@@ -8,6 +8,7 @@ import monitorx.monitorxethminer.statusReport.Metric;
 import monitorx.monitorxethminer.statusReport.NodeStatus;
 import monitorx.monitorxethminer.statusReport.NodeStatusUpload;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.math.NumberUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,7 +20,13 @@ import javax.annotation.PostConstruct;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * @author qianlifeng
@@ -27,7 +34,7 @@ import java.util.*;
 @Component
 public class ReportSchedule {
 
-    Logger logger = LoggerFactory.getLogger(getClass());
+    private Logger logger = LoggerFactory.getLogger(getClass());
 
     @Autowired
     EthMinerService ethMinerService;
@@ -38,8 +45,11 @@ public class ReportSchedule {
 
     private List<Map<String, String>> gpuInfo = new ArrayList<>();
 
+    @Value("${gpuFolder}")
+    private String gpuFolder;
+
     @Value("${api.url}")
-    String apiUrl;
+    private String apiUrl;
 
     @Value("${code}")
     private String code;
@@ -49,6 +59,10 @@ public class ReportSchedule {
 
     @Value("${wallet}")
     private String wallet;
+
+    private static Pattern GPUTemperaturePattern = Pattern.compile("GPU Temperature:(.*)C");
+    private static Pattern GPULoadPattern = Pattern.compile("GPU Load:(.*) %");
+    private static Pattern GPUPowerPattern = Pattern.compile("(.*?) W \\(average GPU\\)");
 
     @Scheduled(fixedDelay = 6000)
     public void report() {
@@ -124,12 +138,16 @@ public class ReportSchedule {
             sb.append("         <th width='150'>序号</th>");
             sb.append("         <th>温度℃</th>");
             sb.append("         <th>算力Mh/s</th>");
+            sb.append("         <th>负载%</th>");
+            sb.append("         <th>平均功率W</th>");
             sb.append("     </tr>");
             for (Map<String, String> gpu : gpuInfo) {
                 sb.append("     <tr>");
                 sb.append("         <td>").append(gpu.get("index")).append("</td>");
                 sb.append("         <td>").append(gpu.get("temperature")).append("</td>");
                 sb.append("         <td>").append(gpu.get("hashRate")).append("</td>");
+                sb.append("         <td>").append(gpu.get("load")).append("</td>");
+                sb.append("         <td>").append(gpu.get("power")).append("</td>");
                 sb.append("     </tr>");
             }
             sb.append("</table>");
@@ -170,22 +188,50 @@ public class ReportSchedule {
 
     @Scheduled(fixedDelay = 10000)
     private void getGPUInfo() {
+        List<Map<String, String>> info = new ArrayList<>();
+
+        String res = null;
+        String[] hashRateList = null;
         try {
-            List<Map<String, String>> info = new ArrayList<>();
-            String res = JsonRPCImpl.doRequest(apiUrl, 17, "2,0", "miner_getstat1");
+            res = JsonRPCImpl.doRequest(apiUrl, 17, "2,0", "miner_getstat1");
             List<String> resList = JSON.parseArray(JSON.parseObject(res).getString("result"), String.class);
             String[] tempList = resList.get(6).split("; ");
-            String[] hashRateList = resList.get(3).split(";");
-            for (Integer i = 0; i < tempList.length; i++) {
-                Map<String, String> infoMap = new HashMap<>();
-                infoMap.put("index", "GPU" + i);
-                infoMap.put("temperature", tempList[i].split(";")[0]);
-                infoMap.put("hashRate", String.valueOf(Integer.valueOf(hashRateList[i]) / 1000));
-                info.add(infoMap);
-            }
-            gpuInfo = info;
+            hashRateList = resList.get(3).split(";");
         } catch (IOException e) {
             e.printStackTrace();
         }
+
+        if (StringUtils.isNotEmpty(gpuFolder) && hashRateList != null) {
+            for (int i = 1; i < 7; i++) {
+                Path path = Paths.get(gpuFolder, i + "", "amdgpu_pm_info");
+                try {
+                    String content = new String(Files.readAllBytes(path));
+                    Matcher temperatureMatcher = GPUTemperaturePattern.matcher(content);
+                    Matcher loadMatcher = GPULoadPattern.matcher(content);
+                    Matcher powerMatcher = GPUPowerPattern.matcher(content);
+                    if (temperatureMatcher.find() && loadMatcher.find() && powerMatcher.find()) {
+                        Map<String, String> infoMap = new HashMap<>();
+                        String temperature = temperatureMatcher.group(1).trim();
+                        String load = loadMatcher.group(1).trim();
+                        String power = powerMatcher.group(1).trim();
+
+                        infoMap.put("index", i + "");
+                        infoMap.put("temperature", temperature);
+                        infoMap.put("hashRate", String.valueOf(NumberUtil.roundUpFormatDouble(Double.valueOf(hashRateList[i - 1]) / 1000D, 4)));
+                        infoMap.put("load", load);
+                        infoMap.put("power", power);
+                        info.add(infoMap);
+                    } else {
+                        logger.info("didn't find");
+                    }
+                } catch (NoSuchFileException e) {
+                    break;
+                } catch (IOException e) {
+                    logger.error("read gpu info failed, path={}", path.toString(), e);
+                }
+            }
+        }
+
+        gpuInfo = info;
     }
 }
