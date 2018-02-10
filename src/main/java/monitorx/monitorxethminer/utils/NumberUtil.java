@@ -1,4 +1,4 @@
-package monitorx.monitorxethminer;
+package monitorx.monitorxethminer.utils;
 
 import java.math.BigDecimal;
 

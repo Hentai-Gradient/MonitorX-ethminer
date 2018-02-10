@@ -1,7 +1,7 @@
 package monitorx.monitorxethminer.tail;
 
 import com.alibaba.fastjson.JSON;
-import monitorx.monitorxethminer.jsonrpc.JsonRPCImpl;
+import monitorx.monitorxethminer.utils.SocketUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -67,7 +67,7 @@ public class LogTail implements Runnable {
         this.tailing = true;
         try {
             while (this.tailing) {
-                String res = JsonRPCImpl.doRequest(apiUrl, 17, "2,0", "miner_getstat1");
+                String res = SocketUtil.sendRequest(apiUrl);
                 List<String> resList = JSON.parseArray(JSON.parseObject(res).getString("result"), String.class);
                 this.notify(resList.get(2).split(";")[0]);
                 Thread.sleep(this.sampleInterval);
@@ -83,6 +83,4 @@ public class LogTail implements Runnable {
     public void stop() {
         this.tailing = false;
     }
-
-
 }

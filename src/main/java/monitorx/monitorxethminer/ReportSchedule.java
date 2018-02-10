@@ -3,12 +3,13 @@ package monitorx.monitorxethminer;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import monitorx.monitorxethminer.jsonrpc.JsonRPCImpl;
 import monitorx.monitorxethminer.statusReport.Metric;
 import monitorx.monitorxethminer.statusReport.NodeStatus;
 import monitorx.monitorxethminer.statusReport.NodeStatusUpload;
+import monitorx.monitorxethminer.utils.HTTPUtil;
+import monitorx.monitorxethminer.utils.NumberUtil;
+import monitorx.monitorxethminer.utils.SocketUtil;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.math.NumberUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -193,7 +194,7 @@ public class ReportSchedule {
         String res = null;
         String[] hashRateList = null;
         try {
-            res = JsonRPCImpl.doRequest(apiUrl, 17, "2,0", "miner_getstat1");
+            res = SocketUtil.sendRequest(apiUrl);
             List<String> resList = JSON.parseArray(JSON.parseObject(res).getString("result"), String.class);
             String[] tempList = resList.get(6).split("; ");
             hashRateList = resList.get(3).split(";");
@@ -201,8 +202,9 @@ public class ReportSchedule {
             e.printStackTrace();
         }
 
+        int hashRateIndex = 0;
         if (StringUtils.isNotEmpty(gpuFolder) && hashRateList != null) {
-            for (int i = 1; i < 7; i++) {
+            for (int i = 0; i < 20; i++) {
                 Path path = Paths.get(gpuFolder, i + "", "amdgpu_pm_info");
                 try {
                     String content = new String(Files.readAllBytes(path));
@@ -217,15 +219,14 @@ public class ReportSchedule {
 
                         infoMap.put("index", i + "");
                         infoMap.put("temperature", temperature);
-                        infoMap.put("hashRate", String.valueOf(NumberUtil.roundUpFormatDouble(Double.valueOf(hashRateList[i - 1]) / 1000D, 4)));
+                        infoMap.put("hashRate", String.valueOf(NumberUtil.roundUpFormatDouble(Double.valueOf(hashRateList[hashRateIndex++]) / 1000D, 4)));
                         infoMap.put("load", load);
                         infoMap.put("power", power);
                         info.add(infoMap);
                     } else {
                         logger.info("didn't find");
                     }
-                } catch (NoSuchFileException e) {
-                    break;
+                } catch (NoSuchFileException ignore) {
                 } catch (IOException e) {
                     logger.error("read gpu info failed, path={}", path.toString(), e);
                 }

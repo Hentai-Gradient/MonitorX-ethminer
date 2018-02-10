@@ -1,4 +1,4 @@
-package monitorx.monitorxethminer;
+package monitorx.monitorxethminer.utils;
 
 import com.alibaba.fastjson.JSON;
 import org.apache.commons.lang3.StringUtils;
