@@ -24,13 +24,10 @@ public class EthMinerService {
     @Value("${log}")
     String logFile;
 
-    @Value("${wallet}")
-    String walletAddress;
-
     private Date lastTailDate;
     private Integer lastTailMh;
 
-    Pattern pattern = Pattern.compile(".*?Speed (.*?) M.*");
+    Pattern pattern = Pattern.compile("accept");
 
     public Date getLastTailDate() {
         return lastTailDate;
@@ -49,7 +46,7 @@ public class EthMinerService {
     }
 
     public void run() throws IOException {
-        LogTail tailer = new LogTail(1000, new File(logFile), false);
+        LogTail tailer = new LogTail(5000, new File(logFile), false);
         tailer.add(msg -> {
             Integer mh = parseMh(msg);
             if (mh != null) {
@@ -62,11 +59,9 @@ public class EthMinerService {
 
     private Integer parseMh(String line) {
         //remove ascii color
-        line = line.replaceAll("\u001B\\[[;\\d]*m", "");
         Matcher matcher = pattern.matcher(line);
         if (matcher.find()) {
-            String val = matcher.group(1).trim();
-            return new BigDecimal(val).intValue();
+            return 100;
         }
 
         return null;

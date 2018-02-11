@@ -99,7 +99,6 @@ public class LogTail implements Runnable {
         }
     }
 
-
     /**
      * 停止tail
      */
