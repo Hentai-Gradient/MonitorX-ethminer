@@ -13,7 +13,7 @@ public class SocketUtil {
 
     public static String sendRequest(String url) throws IOException {
         Socket socket = new Socket(url.split(":")[0], Integer.valueOf(url.split(":")[1]));
-        socket.setSoTimeout(1000);
+        socket.setSoTimeout(2000);
         DataInputStream input = new DataInputStream(socket.getInputStream());
         DataOutputStream out = new DataOutputStream(socket.getOutputStream());
         out.writeBytes("{\"id\":\"17\",\"jsonrpc\":\"2.0\",\"method\":\"miner_getstat1\"}\n");

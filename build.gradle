@@ -24,7 +24,6 @@ repositories {
     maven { url "http://maven.aliyun.com/nexus/content/groups/public" }
 }
 
-
 dependencies {
     compile('org.springframework.boot:spring-boot-starter')
     compile "org.apache.httpcomponents:httpclient:4.5"

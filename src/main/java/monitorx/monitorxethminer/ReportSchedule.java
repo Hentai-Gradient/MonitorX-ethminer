@@ -18,7 +18,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
+import java.io.File;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.file.Files;
@@ -44,7 +46,13 @@ public class ReportSchedule {
 
     private Map<String, String> xhInfo;
 
+    private long filePointer = 0;
+    private List<String> errorInfo = new ArrayList<>();
+
     private List<Map<String, String>> gpuInfo = new ArrayList<>();
+
+    @Value("${log}")
+    String logFile;
 
     @Value("${gpuFolder}")
     private String gpuFolder;
@@ -64,6 +72,7 @@ public class ReportSchedule {
     private static Pattern GPUTemperaturePattern = Pattern.compile("GPU Temperature:(.*)C");
     private static Pattern GPULoadPattern = Pattern.compile("GPU Load:(.*) %");
     private static Pattern GPUPowerPattern = Pattern.compile("(.*?) W \\(average GPU\\)");
+    private static Pattern GPUInvalidSolutionPattern = Pattern.compile("Invalid solution");
 
     @Scheduled(fixedDelay = 6000)
     public void report() {
@@ -180,6 +189,36 @@ public class ReportSchedule {
                 }
             }
 
+            if (errorInfo != null && errorInfo.size() != 0) {
+                Map<String, Integer> errorMap = new HashMap<>(10);
+                errorInfo.forEach(err -> {
+                    if (errorMap.containsKey(err)) {
+                        errorMap.put(err, errorMap.get(err) + 1);
+                    } else {
+                        errorMap.put(err, 1);
+                    }
+                });
+                Metric errInfoMetric = new Metric();
+                errInfoMetric.setTitle("出现错误");
+                errInfoMetric.setType("text");
+                sb = new StringBuilder();
+                sb.append("<table class='table table-bordered table-condensed'>");
+                sb.append("     <tr>");
+                sb.append("         <th width='70'>序号</th>");
+                sb.append("         <th>出现次数</th>");
+                sb.append("     </tr>");
+                for (String err : errorMap.keySet()) {
+                    sb.append("     <tr>");
+                    sb.append("         <td>").append(err).append("</td>");
+                    sb.append("         <td>").append(errorMap.get(err)).append("</td>");
+                    sb.append("     </tr>");
+                }
+                sb.append("</table>");
+                errInfoMetric.setValue(sb.toString());
+                errInfoMetric.setContext(JSON.toJSONString(errorInfo));
+                metrics.add(errInfoMetric);
+            }
+
             logger.info("reporting to monitorx, url={}, code={}", url, code);
             HTTPUtil.sendBodyPost(url, JSON.toJSONString(statusUpload));
         } catch (IOException e) {
@@ -219,7 +258,9 @@ public class ReportSchedule {
 
                         infoMap.put("index", i + "");
                         infoMap.put("temperature", temperature);
-                        infoMap.put("hashRate", String.valueOf(NumberUtil.roundUpFormatDouble(Double.valueOf(hashRateList[hashRateIndex++]) / 1000D, 4)));
+                        if (!"0".equals(load)) {
+                            infoMap.put("hashRate", String.valueOf(NumberUtil.roundUpFormatDouble(Double.valueOf(hashRateList[hashRateIndex++]) / 1000D, 4)));
+                        }
                         infoMap.put("load", load);
                         infoMap.put("power", power);
                         info.add(infoMap);
@@ -234,5 +275,48 @@ public class ReportSchedule {
         }
 
         gpuInfo = info;
+    }
+
+    @Scheduled(fixedDelay = 100000)
+    private void getFailedInfo() {
+        File logfile = new File(logFile);
+        try {
+            // 创建随机读写文件
+            RandomAccessFile file = new RandomAccessFile(logfile, "r");
+            long fileLength = logfile.length();
+            if (fileLength < filePointer) {
+                file = new RandomAccessFile(logfile, "r");
+                filePointer = 0;
+            }
+            if (fileLength > filePointer) {
+                file.seek(filePointer);
+                String line = file.readLine();
+                while (line != null) {
+                    if (checkIfInvalidResolution(line)) {
+                        errorInfo.add(getErrorCardId(line));
+                    }
+                    line = file.readLine();
+                }
+                filePointer = file.getFilePointer();
+            }
+            file.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private Boolean checkIfInvalidResolution(String line) {
+        Matcher matcher = GPUInvalidSolutionPattern.matcher(line);
+        return matcher.find();
+    }
+
+    private static Pattern findErrorCardPattern = Pattern.compile("cl-\\d");
+
+    private String getErrorCardId(String line) {
+        Matcher matcher = findErrorCardPattern.matcher(line);
+        if (matcher.find()) {
+            return matcher.group(0);
+        }
+        return "line";
     }
 }

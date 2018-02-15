@@ -70,14 +70,14 @@ public class LogTail implements Runnable {
                 String res = null;
                 try {
                     res = SocketUtil.sendRequest(apiUrl);
+                    List<String> resList = JSON.parseArray(JSON.parseObject(res).getString("result"), String.class);
+                    this.notify(resList.get(2).split(";")[0]);
+                    Thread.sleep(this.sampleInterval);
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
-                List<String> resList = JSON.parseArray(JSON.parseObject(res).getString("result"), String.class);
-                this.notify(resList.get(2).split(";")[0]);
-                Thread.sleep(this.sampleInterval);
             }
-        } catch ( InterruptedException e) {
+        } catch (InterruptedException e) {
             e.printStackTrace();
         }
     }
