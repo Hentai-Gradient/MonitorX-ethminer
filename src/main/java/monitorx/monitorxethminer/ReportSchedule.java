@@ -111,8 +111,8 @@ public class ReportSchedule {
 
             Metric balanceMetric = new Metric();
             balanceMetric.setTitle("钱包余额");
-            balanceMetric.setType("number");
-            balanceMetric.setValue(balance);
+            balanceMetric.setType("text");
+            balanceMetric.setValue("<div style='font-weight: 700;font-size: 90px;font-family: 黑体!important;height: 230px;display: flex;align-items: center;justify-content: center;'>" + balance + "</div>");
             metrics.add(balanceMetric);
 
             logger.info("reporting to monitorx, url={}, code={}", url, code);
