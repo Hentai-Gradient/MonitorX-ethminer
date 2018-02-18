@@ -1,6 +1,8 @@
 package monitorx.monitorxethminer;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import monitorx.monitorxethminer.statusReport.Hashrate;
 import monitorx.monitorxethminer.statusReport.Metric;
 import monitorx.monitorxethminer.statusReport.NodeStatus;
@@ -8,6 +10,7 @@ import monitorx.monitorxethminer.statusReport.NodeStatusUpload;
 import monitorx.monitorxethminer.utils.DateUtil;
 import monitorx.monitorxethminer.utils.HTTPUtil;
 import monitorx.monitorxethminer.utils.NumberUtil;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,6 +20,8 @@ import org.springframework.stereotype.Component;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.text.ParseException;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -35,6 +40,9 @@ public class ReportSchedule {
 
     @Value("${url}")
     private String url;
+
+    @Value("${wallet}")
+    private String wallet;
 
     @Value("${log}")
     private String logFile;
@@ -80,7 +88,9 @@ public class ReportSchedule {
             for (String key : keySet) {
                 sb.append("     <tr>");
                 sb.append("         <td>").append(key).append("</td>");
-                sb.append("         <td>").append(NumberUtil.roundUpFormatDouble(hashRateMap.get(key).getHashrate(), 2)).append("</td>");
+                Double diff = xhInfo.get(key) - hashRateMap.get(key).getHashrate();
+                String connect = diff >= 0 ? "+" : "";
+                sb.append("         <td>").append(NumberUtil.roundUpFormatDouble(hashRateMap.get(key).getHashrate(), 2)).append(connect).append(NumberUtil.roundUpFormatDouble(diff / hashRateMap.get(key).getHashrate() * 100, 4)).append("%").append("</td>");
                 sb.append("         <td>").append(DateUtil.getStringDate(hashRateMap.get(key).getReportTime())).append("</td>");
                 sb.append("     </tr>");
             }
@@ -99,15 +109,21 @@ public class ReportSchedule {
             }
             metrics.add(lagMetric);
 
+            Metric balanceMetric = new Metric();
+            balanceMetric.setTitle("钱包余额");
+            balanceMetric.setType("number");
+            balanceMetric.setValue(balance);
+            metrics.add(balanceMetric);
+
             logger.info("reporting to monitorx, url={}, code={}", url, code);
             HTTPUtil.sendBodyPost(url, JSON.toJSONString(statusUpload));
         } catch (IOException e) {
             logger.error("upload to monitorx error: " + e.getMessage(), e);
         }
+
     }
 
     private long filePointer = 0;
-    private List<String> fileInfo = new ArrayList<>();
     private HashMap<String, Hashrate> hashRateMap = new HashMap<>();
     private static Pattern preCommitPattern = Pattern.compile("INFO proxy # MAIN eth_submitWork.*by");
     private static Pattern acceptPattern = Pattern.compile("INFO protocol # .*from.*accepted");
@@ -118,8 +134,6 @@ public class ReportSchedule {
     private Long lagCount = 0L;
     private Long allLag = 0L;
 
-    private Boolean havePreCommit = false;
-    private Boolean haveAccept = false;
     private Boolean isWorking = false;
 
     @Scheduled(fixedDelay = 1000 * 60 * 30)
@@ -138,10 +152,11 @@ public class ReportSchedule {
     @Scheduled(fixedDelay = 1000 * 30)
     private void getFileInfo() {
         // 初始化数据
-        havePreCommit = false;
-        haveAccept = false;
+        Boolean havePreCommit = false;
+        Boolean haveAccept = false;
+        List<String> fileInfo = new ArrayList<>();
         isWorking = false;
-        fileInfo = new ArrayList<>();
+
         File logfile = new File(logFile);
         try {
             // 创建随机读写文件
@@ -212,4 +227,36 @@ public class ReportSchedule {
             e.printStackTrace();
         }
     }
+
+    private String balance = "";
+    private Map<String, Double> xhInfo = new HashMap<>();
+
+    /**
+     * 获得星火矿池信息
+     */
+    @Scheduled(fixedDelay = 600000)
+    private void getXHInfo() {
+        Map<String, Double> map = new HashMap<>();
+
+        if (StringUtils.isNotEmpty(wallet)) {
+            String walletStr = wallet.replaceAll("0x", "");
+            String url = "https://eth.ethfans.org/api/page/miner?value=" + walletStr;
+            try {
+                JSONObject info = JSON.parseObject(HTTPUtil.sendGet(url.toLowerCase()));
+                String balanceStr = info.getJSONObject("balance").getJSONObject("data").getString("balance");
+                balance = new BigDecimal(balanceStr).divide(BigDecimal.valueOf(1000000000000000000L)).setScale(3, RoundingMode.HALF_UP).toString();
+
+                JSONArray workers = info.getJSONObject("workers").getJSONArray("data");
+                workers.forEach(worker -> {
+                    Long hashrate24H = ((JSONObject) worker).getLong("hashrate1d");
+                    map.put(((JSONObject) worker).getString("rig"), Double.valueOf(new BigDecimal(hashrate24H).divide(BigDecimal.valueOf(1000000)).setScale(2, RoundingMode.HALF_UP).toString()));
+                });
+
+                xhInfo = map;
+            } catch (IOException e) {
+                logger.error("get ethfans info error: " + e.getMessage());
+            }
+        }
+    }
+
 }
