@@ -7,9 +7,7 @@ import monitorx.monitorxethminer.statusReport.Hashrate;
 import monitorx.monitorxethminer.statusReport.Metric;
 import monitorx.monitorxethminer.statusReport.NodeStatus;
 import monitorx.monitorxethminer.statusReport.NodeStatusUpload;
-import monitorx.monitorxethminer.utils.DateUtil;
-import monitorx.monitorxethminer.utils.HTTPUtil;
-import monitorx.monitorxethminer.utils.NumberUtil;
+import monitorx.monitorxethminer.utils.*;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,6 +67,7 @@ public class ReportSchedule {
             if (isWorking) {
                 acceptMetric.setValue("100");
             } else {
+                restartEthProxy();
                 acceptMetric.setValue("0");
             }
             metrics.add(acceptMetric);
@@ -85,6 +84,9 @@ public class ReportSchedule {
             sb.append("         <th>算力Mh/s</th>");
             sb.append("         <th>报告时间</th>");
             sb.append("     </tr>");
+
+            Double realRate = 0D;
+            Double xhRate = 0D;
             for (String key : keySet) {
                 sb.append("     <tr>");
                 sb.append("         <td>").append(key).append("</td>");
@@ -92,6 +94,18 @@ public class ReportSchedule {
                 String connect = diff >= 0 ? "+" : "";
                 sb.append("         <td>").append(NumberUtil.roundUpFormatDouble(hashRateMap.get(key).getHashrate(), 2)).append(connect).append(NumberUtil.roundUpFormatDouble(diff / hashRateMap.get(key).getHashrate() * 100, 4)).append("%").append("</td>");
                 sb.append("         <td>").append(DateUtil.getStringDate(hashRateMap.get(key).getReportTime())).append("</td>");
+                sb.append("     </tr>");
+                realRate += hashRateMap.get(key).getHashrate();
+                xhRate += xhInfo.get(key);
+            }
+
+            {
+                sb.append("     <tr>");
+                sb.append("         <td>").append("总计").append("</td>");
+                Double diff = xhRate - realRate;
+                String connect = diff >= 0 ? "+" : "";
+                sb.append("         <td>").append(NumberUtil.roundUpFormatDouble(realRate, 2)).append(connect).append(NumberUtil.roundUpFormatDouble(diff / realRate * 100, 2)).append("%").append("</td>");
+                sb.append("         <td>").append(NumberUtil.roundUpFormatDouble(xhRate, 2)).append("</td>");
                 sb.append("     </tr>");
             }
             sb.append("</table>");
@@ -259,4 +273,30 @@ public class ReportSchedule {
         }
     }
 
+    @Value("${supervisor.rpc.url}")
+    private String supervisorRPCUrl;
+
+    @Value("${supervisor.rpc.userName:}")
+    private String supervisorUsername;
+
+    @Value("${supervisor.rpc.password:}")
+    private String supervisorPassword;
+
+    @Value("${supervisor.process.name}")
+    private String supervisorProcessName;
+
+    private void restartEthProxy() {
+        logger.error(XMLRPCUtil.requestXmlRPC(supervisorRPCUrl, supervisorUsername, supervisorPassword, "supervisor.getProcessInfo", supervisorProcessName));
+        logger.error(XMLRPCUtil.requestXmlRPC(supervisorRPCUrl, supervisorUsername, supervisorPassword, "supervisor.stopProcess", supervisorProcessName));
+        while (true) {
+            JSONObject obj = JSON.parseObject(XMLRPCUtil.requestXmlRPC(supervisorRPCUrl, supervisorUsername, supervisorPassword, "supervisor.getProcessInfo", supervisorProcessName));
+            logger.error(obj.toJSONString());
+            if ("RUNNING".equals(obj.getString("statename"))) {
+                ThreadSleepUtil.sleep(1000L);
+            } else {
+                break;
+            }
+        }
+        logger.error(XMLRPCUtil.requestXmlRPC(supervisorRPCUrl, supervisorUsername, supervisorPassword, "supervisor.startProcess", supervisorProcessName));
+    }
 }

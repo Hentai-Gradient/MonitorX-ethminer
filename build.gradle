@@ -31,4 +31,5 @@ dependencies {
     compile "org.apache.httpcomponents:httpmime:4.5"
     compile 'com.alibaba:fastjson:1.2.29'
     compile "org.apache.commons:commons-lang3:3.3.2"
+    compile 'org.apache.xmlrpc:xmlrpc-client:3.1.3'
 }
