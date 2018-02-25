@@ -22,6 +22,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.ParseException;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -72,46 +73,48 @@ public class ReportSchedule {
             }
             metrics.add(acceptMetric);
 
-            Metric hashrateMetric = new Metric();
-            hashrateMetric.setTitle("GPU信息");
-            hashrateMetric.setType("text");
-            StringBuilder sb = new StringBuilder();
-            List<String> keySet = new ArrayList<>(hashRateMap.keySet());
-            keySet.sort(String::compareTo);
-            sb.append("<table class='table table-bordered table-condensed'>");
-            sb.append("     <tr>");
-            sb.append("         <th width='60'>矿机号</th>");
-            sb.append("         <th>算力Mh/s</th>");
-            sb.append("         <th>报告时间</th>");
-            sb.append("     </tr>");
-
-            Double realRate = 0D;
-            Double xhRate = 0D;
-            for (String key : keySet) {
+            if (ethermineInfo.size() > 0) {
+                Metric hashrateMetric = new Metric();
+                hashrateMetric.setTitle("GPU信息");
+                hashrateMetric.setType("text");
+                StringBuilder sb = new StringBuilder();
+                List<String> keySet = new ArrayList<>(hashRateMap.keySet());
+                keySet.sort(String::compareTo);
+                sb.append("<table class='table table-bordered table-condensed'>");
                 sb.append("     <tr>");
-                sb.append("         <td>").append(key).append("</td>");
-                Double diff = xhInfo.get(key) - hashRateMap.get(key).getHashrate();
-                String connect = diff >= 0 ? "+" : "";
-                sb.append("         <td>").append(NumberUtil.roundUpFormatDouble(hashRateMap.get(key).getHashrate(), 2)).append(connect).append(NumberUtil.roundUpFormatDouble(diff / hashRateMap.get(key).getHashrate() * 100, 4)).append("%").append("</td>");
-                sb.append("         <td>").append(DateUtil.getStringDate(hashRateMap.get(key).getReportTime())).append("</td>");
+                sb.append("         <th width='60'>矿机号</th>");
+                sb.append("         <th>算力Mh/s</th>");
+                sb.append("         <th>报告时间</th>");
                 sb.append("     </tr>");
-                realRate += hashRateMap.get(key).getHashrate();
-                xhRate += xhInfo.get(key);
-            }
 
-            {
-                sb.append("     <tr>");
-                sb.append("         <td>").append("总计").append("</td>");
-                Double diff = xhRate - realRate;
-                String connect = diff >= 0 ? "+" : "";
-                sb.append("         <td>").append(NumberUtil.roundUpFormatDouble(realRate, 2)).append(connect).append(NumberUtil.roundUpFormatDouble(diff / realRate * 100, 2)).append("%").append("</td>");
-                sb.append("         <td>").append(NumberUtil.roundUpFormatDouble(xhRate, 2)).append("</td>");
-                sb.append("     </tr>");
+                Double realRate = 0D;
+                Double xhRate = 0D;
+                for (String key : keySet) {
+                    sb.append("     <tr>");
+                    sb.append("         <td>").append(key).append("</td>");
+                    Double diff = ethermineInfo.get(key) - hashRateMap.get(key).getHashrate();
+                    String connect = diff >= 0 ? "+" : "";
+                    sb.append("         <td>").append(NumberUtil.roundUpFormatDouble(hashRateMap.get(key).getHashrate(), 2)).append(connect).append(NumberUtil.roundUpFormatDouble(diff / hashRateMap.get(key).getHashrate() * 100, 4)).append("%").append("</td>");
+                    sb.append("         <td>").append(DateUtil.getStringDate(hashRateMap.get(key).getReportTime())).append("</td>");
+                    sb.append("     </tr>");
+                    realRate += hashRateMap.get(key).getHashrate();
+                    xhRate += ethermineInfo.get(key);
+                }
+
+                {
+                    sb.append("     <tr>");
+                    sb.append("         <td>").append("总计").append("</td>");
+                    Double diff = xhRate - realRate;
+                    String connect = diff >= 0 ? "+" : "";
+                    sb.append("         <td>").append(NumberUtil.roundUpFormatDouble(realRate, 2)).append(connect).append(NumberUtil.roundUpFormatDouble(diff / realRate * 100, 2)).append("%").append("</td>");
+                    sb.append("         <td>").append(NumberUtil.roundUpFormatDouble(xhRate, 2)).append("</td>");
+                    sb.append("     </tr>");
+                }
+                sb.append("</table>");
+                hashrateMetric.setValue(sb.toString());
+                hashrateMetric.setContext(JSON.toJSONString(hashRateMap));
+                metrics.add(hashrateMetric);
             }
-            sb.append("</table>");
-            hashrateMetric.setValue(sb.toString());
-            hashrateMetric.setContext(JSON.toJSONString(hashRateMap));
-            metrics.add(hashrateMetric);
 
             Metric lagMetric = new Metric();
             lagMetric.setTitle("当前平均延迟");
@@ -148,7 +151,7 @@ public class ReportSchedule {
     private Long lagCount = 0L;
     private Long allLag = 0L;
 
-    private Boolean isWorking = false;
+    private Boolean isWorking = true;
 
     @Scheduled(fixedDelay = 1000 * 60 * 30)
     private void deleteOldHashRate() {
@@ -169,7 +172,7 @@ public class ReportSchedule {
         Boolean havePreCommit = false;
         Boolean haveAccept = false;
         List<String> fileInfo = new ArrayList<>();
-        isWorking = false;
+
 
         File logfile = new File(logFile);
         try {
@@ -243,32 +246,36 @@ public class ReportSchedule {
     }
 
     private String balance = "";
-    private Map<String, Double> xhInfo = new HashMap<>();
+    private Map<String, Double> ethermineInfo = new HashMap<>();
 
     /**
-     * 获得星火矿池信息
+     * 获得ethermine矿池信息
      */
     @Scheduled(fixedDelay = 600000)
-    private void getXHInfo() {
+    private void getEthermineInfo() {
         Map<String, Double> map = new HashMap<>();
 
         if (StringUtils.isNotEmpty(wallet)) {
+            AtomicReference<Long> lBalance = new AtomicReference<>(0L);
             String walletStr = wallet.replaceAll("0x", "");
-            String url = "https://eth.ethfans.org/api/page/miner?value=" + walletStr;
+            String url = "https://api.ethermine.org/miner/" + walletStr + "/workers";
             try {
                 JSONObject info = JSON.parseObject(HTTPUtil.sendGet(url.toLowerCase()));
-                String balanceStr = info.getJSONObject("balance").getJSONObject("data").getString("balance");
-                balance = new BigDecimal(balanceStr).divide(BigDecimal.valueOf(1000000000000000000L)).setScale(3, RoundingMode.HALF_UP).toString();
-
-                JSONArray workers = info.getJSONObject("workers").getJSONArray("data");
+                JSONArray workers = info.getJSONArray("data");
                 workers.forEach(worker -> {
-                    Long hashrate24H = ((JSONObject) worker).getLong("hashrate1d");
-                    map.put(((JSONObject) worker).getString("rig"), Double.valueOf(new BigDecimal(hashrate24H).divide(BigDecimal.valueOf(1000000)).setScale(2, RoundingMode.HALF_UP).toString()));
+                    Long hashrate24H = ((JSONObject) worker).getLong("averageHashrate");
+                    lBalance.updateAndGet(v -> v + hashrate24H);
+                    map.put(((JSONObject) worker).getString("worker"), Double.valueOf(new BigDecimal(hashrate24H).divide(BigDecimal.valueOf(1000000)).setScale(2, RoundingMode.HALF_UP).toString()));
                 });
 
-                xhInfo = map;
+                ethermineInfo = map;
+
+                url = "https://api.ethermine.org/miner/" + wallet + "/currentStats";
+                info = JSON.parseObject(HTTPUtil.sendGet(url.toLowerCase()));
+                balance = String.valueOf(NumberUtil.roundUpFormatDouble(info.getJSONObject("data").getLong("unpaid") / 1000000000000000000D, 6));
+
             } catch (IOException e) {
-                logger.error("get ethfans info error: " + e.getMessage());
+                logger.error("get ethermine info error: " + e.getMessage());
             }
         }
     }
