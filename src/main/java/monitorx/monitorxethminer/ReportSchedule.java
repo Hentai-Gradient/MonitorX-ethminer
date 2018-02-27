@@ -66,52 +66,26 @@ public class ReportSchedule {
     @Value("${url}")
     private String url;
 
+    @Value("${report.url}")
+    private String reportUrl;
+
     @Value("${wallet}")
     private String wallet;
 
     private static Pattern GPUTemperaturePattern = Pattern.compile("GPU Temperature:(.*)C");
     private static Pattern GPULoadPattern = Pattern.compile("GPU Load:(.*) %");
     private static Pattern GPUPowerPattern = Pattern.compile("(.*?) W \\(average GPU\\)");
+    private static Pattern GPUMCLKPattern = Pattern.compile("(.*?) MHz \\(MCLK\\)");
+    private static Pattern GPUSCLKPattern = Pattern.compile("(.*?) MHz \\(SCLK\\)");
     private static Pattern GPUInvalidSolutionPattern = Pattern.compile("Invalid solution");
+    private static Pattern GPUIncorrectResultPattern = Pattern.compile("incorrect result");
 
     @Scheduled(fixedDelay = 6000)
     public void report() {
         upload();
     }
 
-    @PostConstruct
-    public void init() {
-        getXHInfo();
-    }
-
-    /**
-     * 获得星火矿池信息
-     */
-    @Scheduled(fixedDelay = 600000)
-    private void getXHInfo() {
-        if (StringUtils.isNotEmpty(wallet)) {
-            String walletStr = wallet.replaceAll("0x", "");
-            String url = "https://eth.ethfans.org/api/page/miner?value=" + walletStr;
-            try {
-                Map<String, String> map = new HashMap<>();
-                JSONObject info = JSON.parseObject(HTTPUtil.sendGet(url.toLowerCase()));
-                String balanceStr = info.getJSONObject("balance").getJSONObject("data").getString("balance");
-                String balance = new BigDecimal(balanceStr).divide(BigDecimal.valueOf(1000000000000000000L)).setScale(3, RoundingMode.HALF_UP).toString();
-                map.put("balance", balance);
-
-                JSONArray workers = info.getJSONObject("workers").getJSONArray("data");
-                workers.stream().filter(o -> ((JSONObject) o).getString("rig").equals(code)).findFirst().ifPresent(worker -> {
-                    Long hashrate24H = ((JSONObject) worker).getLong("hashrate1d");
-                    String workerHashrate24HStr = new BigDecimal(hashrate24H).divide(BigDecimal.valueOf(1000000)).setScale(0, RoundingMode.HALF_UP).toString();
-                    map.put("meanHashrate24H", workerHashrate24HStr);
-                });
-
-                xhInfo = map;
-            } catch (IOException e) {
-                logger.error("get ethfans info error: " + e.getMessage());
-            }
-        }
-    }
+    NodeStatusUpload lastUpload = null;
 
     private void upload() {
         try {
@@ -145,10 +119,12 @@ public class ReportSchedule {
             StringBuilder sb = new StringBuilder();
             sb.append("<table class='table table-bordered table-condensed'>");
             sb.append("     <tr>");
-            sb.append("         <th width='80'>序号</th>");
+            sb.append("         <th width='50'>序号</th>");
             sb.append("         <th>温度℃</th>");
             sb.append("         <th>算力Mh/s</th>");
             sb.append("         <th>负载%</th>");
+            sb.append("         <th>显存频率</th>");
+            sb.append("         <th>核心频率</th>");
             sb.append("         <th>平均功率W</th>");
             sb.append("     </tr>");
             for (Map<String, String> gpu : gpuInfo) {
@@ -157,6 +133,8 @@ public class ReportSchedule {
                 sb.append("         <td>").append(gpu.get("temperature")).append("</td>");
                 sb.append("         <td>").append(gpu.get("hashRate")).append("</td>");
                 sb.append("         <td>").append(gpu.get("load")).append("</td>");
+                sb.append("         <td>").append(gpu.get("mclk")).append("</td>");
+                sb.append("         <td>").append(gpu.get("sclk")).append("</td>");
                 sb.append("         <td>").append(gpu.get("power")).append("</td>");
                 sb.append("     </tr>");
             }
@@ -164,30 +142,6 @@ public class ReportSchedule {
             gpuMetric.setValue(sb.toString());
             gpuMetric.setContext(JSON.toJSONString(gpuInfo));
             metrics.add(gpuMetric);
-
-            if (xhInfo != null) {
-                Metric xhMetric = new Metric();
-                xhMetric.setTitle("星火帐户余额");
-                xhMetric.setType("text");
-                xhMetric.setValue("<div style='font-weight: 700;font-size: 90px;font-family: 黑体!important;height: 230px;display: flex;align-items: center;justify-content: center;'>" + xhInfo.get("balance") + "</div>");
-                metrics.add(xhMetric);
-
-                if (xhInfo.containsKey("meanHashrate24H") && lastTailDate != null && lastTailMh != null) {
-                    Metric meanHashRateMetric = new Metric();
-                    meanHashRateMetric.setTitle("星火24小时平均算力差距");
-                    meanHashRateMetric.setType("number");
-                    meanHashRateMetric.setValue(String.valueOf(Integer.valueOf(xhInfo.get("meanHashrate24H")) - lastTailMh));
-                    metrics.add(meanHashRateMetric);
-                }
-
-                if (xhInfo.containsKey("meanHashrate24H")) {
-                    Metric meanHashRateMetric = new Metric();
-                    meanHashRateMetric.setTitle("星火24小时平均算力");
-                    meanHashRateMetric.setType("number");
-                    meanHashRateMetric.setValue(xhInfo.get("meanHashrate24H"));
-                    metrics.add(meanHashRateMetric);
-                }
-            }
 
             if (errorInfo != null && errorInfo.size() != 0) {
                 Map<String, Integer> errorMap = new HashMap<>(10);
@@ -220,9 +174,21 @@ public class ReportSchedule {
             }
 
             logger.info("reporting to monitorx, url={}, code={}", url, code);
+            lastUpload = statusUpload;
             HTTPUtil.sendBodyPost(url, JSON.toJSONString(statusUpload));
         } catch (IOException e) {
             logger.error("upload to monitorx error: " + e.getMessage(), e);
+        }
+    }
+
+    @Scheduled(fixedDelay = 30 * 1000)
+    private void internalUpload() {
+        try {
+            if (lastUpload != null) {
+                HTTPUtil.sendBodyPost(reportUrl, JSON.toJSONString(lastUpload));
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
@@ -250,11 +216,15 @@ public class ReportSchedule {
                     Matcher temperatureMatcher = GPUTemperaturePattern.matcher(content);
                     Matcher loadMatcher = GPULoadPattern.matcher(content);
                     Matcher powerMatcher = GPUPowerPattern.matcher(content);
-                    if (temperatureMatcher.find() && loadMatcher.find() && powerMatcher.find()) {
+                    Matcher mclkMatcher = GPUMCLKPattern.matcher(content);
+                    Matcher sclkMatcher = GPUSCLKPattern.matcher(content);
+                    if (temperatureMatcher.find() && loadMatcher.find() && powerMatcher.find() && mclkMatcher.find() && sclkMatcher.find()) {
                         Map<String, String> infoMap = new HashMap<>();
                         String temperature = temperatureMatcher.group(1).trim();
                         String load = loadMatcher.group(1).trim();
                         String power = powerMatcher.group(1).trim();
+                        String mclk = mclkMatcher.group(1).trim();
+                        String sclk = sclkMatcher.group(1).trim();
 
                         infoMap.put("index", i + "");
                         infoMap.put("temperature", temperature);
@@ -263,6 +233,8 @@ public class ReportSchedule {
                         }
                         infoMap.put("load", load);
                         infoMap.put("power", power);
+                        infoMap.put("mclk", mclk);
+                        infoMap.put("sclk", sclk);
                         info.add(infoMap);
                     } else {
                         logger.info("didn't find");
@@ -307,7 +279,8 @@ public class ReportSchedule {
 
     private Boolean checkIfInvalidResolution(String line) {
         Matcher matcher = GPUInvalidSolutionPattern.matcher(line);
-        return matcher.find();
+        Matcher matcher1 = GPUIncorrectResultPattern.matcher(line);
+        return matcher.find() || matcher1.find();
     }
 
     private static Pattern findErrorCardPattern = Pattern.compile("cl-\\d");
