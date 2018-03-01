@@ -120,7 +120,7 @@ public class ReportSchedule {
     @Scheduled(fixedDelay = 30 * 1000)
     private void internalUpload() {
         try {
-            if (lastUpload != null) {
+            if (lastUpload != null && StringUtils.isNotEmpty(reportUrl)) {
                 HTTPUtil.sendBodyPost(reportUrl, JSON.toJSONString(lastUpload));
             }
         } catch (IOException e) {
@@ -129,6 +129,8 @@ public class ReportSchedule {
     }
 
     private static Pattern mhLinePattern = Pattern.compile("ETH: .*Mh/s");
+    private static Pattern oneMinPattern = Pattern.compile("1 minute average ETH.*Mh/s");
+
     private static Pattern mhPattern = Pattern.compile("\\d*\\.\\d*");
     private String mh = null;
     private List<String> hashRateList = new ArrayList<>();
@@ -150,18 +152,19 @@ public class ReportSchedule {
                     while (mhMatcher.find()) {
                         hashRateList.add(mhMatcher.group());
                     }
+                } else {
+                    Matcher oneMinMatcher = oneMinPattern.matcher(str);
+                    if (oneMinMatcher.find()) {
+                        Matcher mhMatcher = mhPattern.matcher(oneMinMatcher.group());
+                        if (mhMatcher.find()) {
+                            mh = String.valueOf(Double.valueOf(mhMatcher.group()).intValue());
+                        }
+                    }
                 }
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
-
-        Double mhs = 0D;
-        for (String hashRate : hashRateList) {
-            mhs += Double.valueOf(hashRate);
-        }
-
-        mh = String.valueOf(mhs.intValue());
 
         int hashRateIndex = 0;
         if (StringUtils.isNotEmpty(gpuFolder) && hashRateList != null) {
