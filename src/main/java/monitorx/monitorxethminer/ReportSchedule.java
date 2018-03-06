@@ -1,8 +1,6 @@
 package monitorx.monitorxethminer;
 
 import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONArray;
-import com.alibaba.fastjson.JSONObject;
 import monitorx.monitorxethminer.statusReport.Metric;
 import monitorx.monitorxethminer.statusReport.NodeStatus;
 import monitorx.monitorxethminer.statusReport.NodeStatusUpload;
@@ -17,12 +15,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.PostConstruct;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -44,8 +39,6 @@ public class ReportSchedule {
 
     private Date lastUploadDate;
 
-    private Map<String, String> xhInfo;
-
     private long filePointer = 0;
     private List<String> errorInfo = new ArrayList<>();
 
@@ -66,7 +59,7 @@ public class ReportSchedule {
     @Value("${url}")
     private String url;
 
-    @Value("${report.url}")
+    @Value("${report.url:}")
     private String reportUrl;
 
     @Value("${wallet}")
@@ -184,7 +177,7 @@ public class ReportSchedule {
     @Scheduled(fixedDelay = 30 * 1000)
     private void internalUpload() {
         try {
-            if (lastUpload != null) {
+            if (lastUpload != null && StringUtils.isNotEmpty(reportUrl)) {
                 HTTPUtil.sendBodyPost(reportUrl, JSON.toJSONString(lastUpload));
             }
         } catch (IOException e) {
